@@ -30,6 +30,8 @@
 #include <stout/strings.hpp>
 #include <stout/unreachable.hpp>
 
+#include <google/protobuf/io/coded_stream.h>
+
 #include "log/leveldb.hpp"
 
 using std::string;
@@ -37,6 +39,8 @@ using std::string;
 namespace mesos {
 namespace internal {
 namespace log {
+
+static uint64_t decode(const leveldb::Slice& s);
 
 class Varint64Comparator : public leveldb::Comparator
 {
@@ -46,12 +50,12 @@ public:
       const leveldb::Slice& b) const
   {
     // TODO(benh): Use varint comparator.
-    LOG(FATAL) << "Unimplemented";
-    // uint64_t left = position(a);
-    // uint64_t right = position(b);
-    // if (left < right) return -1;
-    // if (left == right) return 0;
-    // if (left > right) return 1;
+//    LOG(FATAL) << "Unimplemented";
+    uint64_t left = decode(a);
+    uint64_t right = decode(b);
+    if (left < right) return -1;
+    if (left == right) return 0;
+    if (left > right) return 1;
     UNREACHABLE();
   }
 
@@ -78,7 +82,7 @@ public:
 
 
 // TODO(benh): Use varint comparator.
-// static Varint64Comparator comparator;
+static Varint64Comparator comparator;
 
 
 // Returns a string representing the specified position. Note that we
@@ -91,16 +95,16 @@ static string encode(uint64_t position, bool adjust = true)
   position = adjust ? position + 1 : position;
 
   // TODO(benh): Use varint encoding for VarInt64Comparator!
-  // string s;
-  // google::protobuf::io::StringOutputStream _stream(&s);
-  // google::protobuf::io::CodedOutputStream stream(&_stream);
-  // position = adjust ? position + 1 : position;
-  // stream.WriteVarint64(position);
-  // return s;
+  string s;
+  google::protobuf::io::StringOutputStream _stream(&s);
+  google::protobuf::io::CodedOutputStream stream(&_stream);
+  position = adjust ? position + 1 : position;
+  stream.WriteVarint64(position);
+  return s;
 
-  Try<string> s = strings::format("%.*d", 10, position);
-  CHECK_SOME(s);
-  return s.get();
+  // Try<string> s = strings::format("%.*d", 10, position);
+  // CHECK_SOME(s);
+  // return s.get();
 }
 
 
@@ -111,19 +115,19 @@ static string encode(uint64_t position, bool adjust = true)
 // still want to keep this function in case we need it in the future.
 // We comment it out to silence the warning (unused static function)
 // from the compiler.
-// static uint64_t decode(const leveldb::Slice& s)
-// {
-//   // TODO(benh): Use varint decoding for VarInt64Comparator!
-//   // uint64_t position;
-//   // google::protobuf::io::ArrayInputStream _stream(s.data(), s.size());
-//   // google::protobuf::io::CodedInputStream stream(&_stream);
-//   // bool success = stream.ReadVarint64(&position);
-//   // CHECK(success);
-//   // return position - 1; // Actual position is less 1 of stringified.
+static uint64_t decode(const leveldb::Slice& s)
+{
+  // TODO(benh): Use varint decoding for VarInt64Comparator!
+  uint64_t position;
+  google::protobuf::io::ArrayInputStream _stream(s.data(), s.size());
+  google::protobuf::io::CodedInputStream stream(&_stream);
+  bool success = stream.ReadVarint64(&position);
+  CHECK(success);
+  return position - 1; // Actual position is less 1 of stringified.
 //   Try<uint64_t> position = numify<uint64_t>(string(s.data(), s.size()));
 //   CHECK_SOME(position);
 //   return position.get() - 1; // Actual position is less 1 of stringified.
-// }
+}
 
 
 LevelDBStorage::LevelDBStorage()
@@ -149,7 +153,7 @@ Try<Storage::State> LevelDBStorage::restore(const string& path)
   // gets fixed. For now, we are using the default byte-wise
   // comparator and *assuming* that the encoding from unsigned long to
   // string produces a stable ordering. Checks below.
-  // options.comparator = &comparator;
+  options.comparator = &comparator;
 
   const string& one = encode(1);
   const string& two = encode(2);
